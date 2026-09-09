@@ -3393,6 +3393,7 @@ function _applySyncedSettings(serverSettings) {
         'shopping_enabled','shopping_mode','shopping_smart_suggestions',
         'shopping_forecast','shopping_auto_add_threshold',
         'recipes_enabled','freezer_only','waste_report_enabled',
+        'use_all_ack_required',
         'dark_mode',
         'barcode_ai_fallback',
         'recipe_source','mealie_url','mealie_offline','mealie_cache_sync_days','mealie_usable','recipe_shopping_mode',
@@ -13467,6 +13468,9 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
     const warn = opts.warn || t('use.use_all_safety_warn');
     const ackLabel = opts.ack || t('use.use_all_safety_ack');
     const slideLabel = opts.slide || t('use.use_all_slide_label');
+    // .env flag USE_ALL_ACK_REQUIRED — when false, skip the acknowledge checkbox
+    // and enable the slide gesture immediately (slide itself stays as the guard).
+    const ackRequired = getSettings().use_all_ack_required !== false;
 
     contentEl.innerHTML = `
         <div class="use-all-safety">
@@ -13475,11 +13479,12 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
             <p class="use-all-safety-product">${escapeHtml(productName)}</p>
             <p class="use-all-safety-qty">${escapeHtml(qtyStr)}</p>
             <p class="use-all-safety-warn">${escapeHtml(warn)}</p>
+            ${ackRequired ? `
             <label class="use-all-safety-check">
                 <input type="checkbox" id="use-all-ack">
                 <span>${escapeHtml(ackLabel)}</span>
-            </label>
-            <div class="slide-confirm is-disabled" id="use-all-slide" aria-disabled="true">
+            </label>` : ''}
+            <div class="slide-confirm${ackRequired ? ' is-disabled' : ''}" id="use-all-slide" aria-disabled="${ackRequired}">
                 <div class="slide-confirm-track">
                     <span class="slide-confirm-label">${escapeHtml(slideLabel)}</span>
                     <div class="slide-confirm-fill" id="use-all-slide-fill"></div>
@@ -13506,7 +13511,7 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
             thumb.setAttribute('aria-valuenow', '0');
         }
     }
-    ack.addEventListener('change', () => setEnabled(ack.checked));
+    if (ack) ack.addEventListener('change', () => setEnabled(ack.checked));
 
     let dragging = false;
     let maxX = 0;

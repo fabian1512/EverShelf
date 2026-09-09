@@ -7524,6 +7524,7 @@ function getServerSettings(): void {
         'recipes_enabled'             => env('RECIPES_ENABLED', 'true') === 'true',
         'freezer_only'                => env('FREEZER_ONLY', 'false') === 'true',
         'waste_report_enabled'        => env('WASTE_REPORT_ENABLED', 'true') === 'true',
+        'use_all_ack_required'        => env('USE_ALL_ACK_REQUIRED', 'true') === 'true',
         'dark_mode'                   => env('DARK_MODE', 'auto'),
         'barcode_ai_fallback'         => env('BARCODE_AI_FALLBACK', 'false') === 'true',
         // Home Assistant Integration
@@ -7673,6 +7674,7 @@ function saveSettings(): void {
         'recipes_enabled'      => 'RECIPES_ENABLED',
         'freezer_only'         => 'FREEZER_ONLY',
         'waste_report_enabled' => 'WASTE_REPORT_ENABLED',
+        'use_all_ack_required' => 'USE_ALL_ACK_REQUIRED',
         'barcode_ai_fallback' => 'BARCODE_AI_FALLBACK',
         // Home Assistant
         'ha_enabled'    => 'HA_ENABLED',
