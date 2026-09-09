@@ -12860,6 +12860,12 @@ function _showVacuumPrompt(openedId, wasVacuumSealed) {
 }
 
 function showLowStockBringPrompt(result, afterCallback) {
+    // Shopping module disabled via .env — skip the low-stock prompt entirely
+    // (list writes are no-op'd server-side); continue the caller's flow.
+    if (getSettings().shopping_enabled === false) {
+        if (typeof afterCallback === 'function') afterCallback();
+        return;
+    }
     const name = result.product_name || currentProduct?.name || '';
     // Generic shopping name (e.g. "Affettato" for "Mortadella IGP"). Falls back to
     // the specific name when shopping_name is not set (older API call), so behaviour
