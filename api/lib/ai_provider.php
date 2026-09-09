@@ -166,6 +166,24 @@ function aiGeminiPayloadToOpenAiMessages(array $payload): array {
     return $messages;
 }
 
+/**
+ * Stable per-instance session id for the OpenCode Go gateway
+ * (required header x-opencode-session — see https://opencode.ai/docs/go).
+ * Persisted in data/ so routing and prompt caching stay stable.
+ */
+function aiOpenCodeSessionId(): string {
+    $file = dirname(__DIR__, 2) . '/data/opencode_session_id';
+    if (is_readable($file)) {
+        $id = trim((string)file_get_contents($file));
+        if ($id !== '') {
+            return $id;
+        }
+    }
+    $id = bin2hex(random_bytes(16));
+    @file_put_contents($file, $id);
+    return $id;
+}
+
 function aiOpenAiChatCompletions(array $geminiPayload, int $timeout = 60): array {
     $base = aiOpenAiBaseUrl();
     if ($base === '') {
@@ -194,6 +212,9 @@ function aiOpenAiChatCompletions(array $geminiPayload, int $timeout = 60): array
     if ($key !== '') {
         $headers[] = 'Authorization: Bearer ' . $key;
     }
+    // OpenCode Go gateway: stable session id + non-generic user agent
+    $headers[] = 'x-opencode-session: ' . aiOpenCodeSessionId();
+    $headers[] = 'User-Agent: EverShelf/1.7';
 
     $t0 = microtime(true);
     $ch = curl_init($url);
