@@ -9950,17 +9950,22 @@ async function _saveExternalBarcodeProduct(code, p) {
 
 async function _resolveBarcodeLookup(barcode) {
     const key = _barcodeCacheKey(barcode);
-    if (_barcodeSessionCache.has(key)) {
+    // GS1 in-store range (EigenBarcodes 200…): never trust cached/persisted
+    // external hits — the local products DB is the only valid source.
+    const isOwnCode = /^2\d{12}$/.test(key);
+    if (!isOwnCode && _barcodeSessionCache.has(key)) {
         return _barcodeSessionCache.get(key);
     }
-    const persisted = _barcodePersistGet(key);
-    if (persisted) {
-        _barcodeSessionCache.set(key, persisted);
-        return persisted;
+    if (!isOwnCode) {
+        const persisted = _barcodePersistGet(key);
+        if (persisted) {
+            _barcodeSessionCache.set(key, persisted);
+            return persisted;
+        }
     }
     const result = await api('resolve_barcode', { barcode: key });
-    _barcodeSessionCache.set(key, result);
-    if (result?.found) _barcodePersistSet(key, result);
+    if (result?.found) _barcodeSessionCache.set(key, result);
+    if (result?.found && !isOwnCode) _barcodePersistSet(key, result);
     return result;
 }
 

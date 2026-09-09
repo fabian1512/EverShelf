@@ -3438,6 +3438,12 @@ function searchBarcode(PDO $db): void {
         echo json_encode(['found' => true, 'source' => 'local', 'product' => $product]);
         return;
     }
+    // In-store range (EigenBarcodes 200…): never ask offline catalog / external APIs
+    if (barcodeIsInStoreRange($barcode)) {
+        EverLog::info('searchBarcode in-store range, skipping external');
+        echo json_encode(['found' => false]);
+        return;
+    }
     if (barcodeOfflineEnabled()) {
         $offline = barcodeCatalogGet($db, $barcode);
         if ($offline && !empty($offline['product'])) {
@@ -3456,6 +3462,16 @@ function searchBarcode(PDO $db): void {
 /** Strip non-digits; used for lookup keys. */
 function barcodeNormalizeDigits(string $barcode): string {
     return preg_replace('/\D/', '', trim($barcode));
+}
+
+/**
+ * GS1 in-store / Eigenmarke range: EAN-13 starting with '2' (200000–299999).
+ * These codes belong to in-store internal numbering — external barcode APIs
+ * return arbitrary/wrong matches for them. Resolve ONLY against the local DB.
+ */
+function barcodeIsInStoreRange(string $barcode): bool {
+    $b = barcodeNormalizeDigits($barcode);
+    return strlen($b) === 13 && $b[0] === '2';
 }
 
 /** EAN-13 / UPC-A variant barcodes to try against local DB and external APIs. */
@@ -3738,7 +3754,7 @@ function _parseUpcItemDbJson(?string $json): ?array {
  */
 function barcodeResolveExternal(PDO $db, string $barcode, bool $forceRefresh = false): ?array {
     $barcode = barcodeNormalizeDigits($barcode);
-    if ($barcode === '') {
+    if ($barcode === '' || barcodeIsInStoreRange($barcode)) {
         return null;
     }
 
