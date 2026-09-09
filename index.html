@@ -149,22 +149,22 @@
     <!-- ===== DASHBOARD ===== -->
     <section class="page active" id="page-dashboard">
         <div class="dashboard-stats" id="dashboard-stats">
-            <div class="stat-card" onclick="showPage('inventory', 'dispensa')">
+            <div class="stat-card" id="stat-card-dispensa" onclick="showPage('inventory', 'dispensa')">
                 <span class="stat-icon">🗄️</span>
                 <span class="stat-value" id="stat-dispensa">-</span>
                 <span class="stat-label" data-i18n="locations.dispensa">Dispensa</span>
             </div>
-            <div class="stat-card" onclick="showPage('inventory', 'frigo')">
+            <div class="stat-card" id="stat-card-frigo" onclick="showPage('inventory', 'frigo')">
                 <span class="stat-icon">🧊</span>
                 <span class="stat-value" id="stat-frigo">-</span>
                 <span class="stat-label" data-i18n="locations.frigo">Frigo</span>
             </div>
-            <div class="stat-card" onclick="showPage('inventory', 'freezer')">
+            <div class="stat-card" id="stat-card-freezer" onclick="showPage('inventory', 'freezer')">
                 <span class="stat-icon">❄️</span>
                 <span class="stat-value" id="stat-freezer">-</span>
                 <span class="stat-label" data-i18n="locations.freezer">Freezer</span>
             </div>
-            <div class="stat-card" onclick="showPage('shopping')">
+            <div class="stat-card" id="stat-card-spesa" onclick="showPage('shopping')">
                 <span class="stat-icon">🛒</span>
                 <span class="stat-value" id="stat-spesa">-</span>
                 <span class="stat-label" data-i18n="nav.shopping">Spesa</span>
@@ -974,7 +974,7 @@
                         <button class="btn btn-primary" onclick="saveSettings()" data-i18n="btn.save">Salva</button>
                     </div>
                 </div>
-                <div class="settings-card">
+                <div class="settings-card" id="custom-locations-card">
                     <h4 data-i18n="settings.custom_locations.title">📍 Luoghi di conservazione</h4>
                     <p class="settings-hint" data-i18n="settings.custom_locations.hint">Aggiungi posti oltre a Dispensa, Frigo, Freezer e Altro (es. Cantina, Garage). I nomi restano così come li scrivi.</p>
                     <p class="settings-hint" data-i18n="settings.custom_locations.builtin_hint">Predefiniti (non rimovibili): Dispensa, Frigo, Freezer, Altro.</p>
@@ -2111,7 +2111,7 @@
         <span class="nav-icon">📋</span>
         <span class="nav-label" data-i18n="nav.inventory">Dispensa</span>
     </button>
-    <button class="nav-btn" onclick="showPage('recipe')" data-page="recipe">
+    <button class="nav-btn" id="nav-recipe" onclick="showPage('recipe')" data-page="recipe">
         <span class="nav-icon">🍳</span>
         <span class="nav-label" data-i18n="nav.recipes">Ricette</span>
     </button>
@@ -2122,7 +2122,7 @@
         </span>
         <span class="nav-label" data-i18n="nav.gemini">Gemini</span>
     </button>
-    <button class="nav-btn" onclick="showPage('shopping')" data-page="shopping">
+    <button class="nav-btn" id="nav-shopping" onclick="showPage('shopping')" data-page="shopping">
         <span class="nav-icon">🛒</span>
         <span class="nav-label" data-i18n="nav.shopping">Spesa</span>
     </button>

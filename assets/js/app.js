@@ -1643,10 +1643,13 @@ function slugifyCustomLocation(name) {
 
 function mergeCustomLocations(names) {
     const next = {};
+    const freezerOnly = !!getSettings().freezer_only;
     for (const [key, meta] of Object.entries(BUILTIN_LOCATIONS)) {
+        if (freezerOnly && key !== 'freezer') continue;
         next[key] = { icon: meta.icon, label: t(meta.labelKey) };
     }
     (names || []).forEach(label => {
+        if (freezerOnly) return;
         const name = String(label || '').trim();
         if (!name) return;
         const key = slugifyCustomLocation(name);
@@ -2410,6 +2413,7 @@ function guessLocationFromName(name) {
 }
 
 function guessLocation(product) {
+    if (getSettings().freezer_only) return 'freezer';
     // 1. Category-based
     if (product.category) {
         const cat = product.category.toLowerCase().replace(/^en:/, '').split(',')[0].trim();
@@ -3388,6 +3392,7 @@ function _applySyncedSettings(serverSettings) {
         'zerowaste_tips_enabled',
         'shopping_enabled','shopping_mode','shopping_smart_suggestions',
         'shopping_forecast','shopping_auto_add_threshold',
+        'recipes_enabled','freezer_only','waste_report_enabled',
         'dark_mode',
         'barcode_ai_fallback',
         'recipe_source','mealie_url','mealie_offline','mealie_cache_sync_days','mealie_usable','recipe_shopping_mode',
@@ -3412,6 +3417,49 @@ function _applySyncedSettings(serverSettings) {
         mergeCustomLocations(s.custom_locations || []);
         // Update localStorage hint for _earlyTheme() IIFE on next load
         try { localStorage.setItem('evershelf_dark_mode', s.dark_mode || 'auto'); } catch(_) {}
+    }
+    _applyModuleVisibility();
+}
+
+/** Toggle whole modules (nav tabs, dashboard cards, settings tabs) from .env flags. */
+function _applyModuleVisibility() {
+    const s = getSettings();
+    const shoppingOn = s.shopping_enabled !== false;
+    const recipesOn = s.recipes_enabled !== false;
+    const wasteOn = s.waste_report_enabled !== false;
+    const freezerOnly = !!s.freezer_only;
+
+    // Shopping
+    const navShop = document.getElementById('nav-shopping');
+    if (navShop) navShop.style.display = shoppingOn ? '' : 'none';
+    const shopCard = document.getElementById('stat-card-spesa');
+    if (shopCard) shopCard.style.display = shoppingOn ? '' : 'none';
+    const shopTab = document.querySelector('.settings-tab[data-tab="tab-bring"]');
+    if (shopTab) shopTab.style.display = shoppingOn ? '' : 'none';
+
+    // Recipes
+    const navRecipe = document.getElementById('nav-recipe');
+    if (navRecipe) navRecipe.style.display = recipesOn ? '' : 'none';
+    const quickRecipe = document.getElementById('quick-recipe-bar');
+    if (quickRecipe) quickRecipe.style.display = recipesOn ? '' : 'none';
+    const recipeTab = document.querySelector('.settings-tab[data-tab="tab-recipe"]');
+    if (recipeTab) recipeTab.style.display = recipesOn ? '' : 'none';
+
+    // Anti-waste report
+    const wasteEl = document.getElementById('waste-chart-section');
+    if (wasteEl) {
+        if (!wasteOn) { wasteEl.style.display = 'none'; wasteEl.dataset.hiddenByFlag = '1'; }
+        else { wasteEl.style.display = ''; delete wasteEl.dataset.hiddenByFlag; }
+    }
+
+    // Freezer-only: hide other location cards
+    if (freezerOnly) {
+        const dispensaCard = document.getElementById('stat-card-dispensa');
+        if (dispensaCard) dispensaCard.style.display = 'none';
+        const frigoCard = document.getElementById('stat-card-frigo');
+        if (frigoCard) frigoCard.style.display = 'none';
+        const customLocCard = document.getElementById('custom-locations-card');
+        if (customLocCard) customLocCard.style.display = 'none';
     }
 }
 
@@ -5168,6 +5216,12 @@ function refreshCurrentPage() {
 }
 
 function showPage(pageId, param = null, options = {}) {
+    // Block disabled modules (controlled by .env flags)
+    if (pageId === 'shopping' && getSettings().shopping_enabled === false) {
+        pageId = 'dashboard';
+    } else if (pageId === 'recipe' && getSettings().recipes_enabled === false) {
+        pageId = 'dashboard';
+    }
     if (!options.skipAddGuard && pageId !== 'add' && _isAddFormLeaveGuardActive()) {
         _promptAddFormLeave(() => showPage(pageId, param, { ...options, skipAddGuard: true }));
         return;
@@ -5463,6 +5517,8 @@ function _awTrendArrow(prev, curr) {
 
 function _renderAntiWasteSection(used30, wasted30, usedP30, wastedP30, usedP60, wastedP60, isOnline = navigator.onLine) {
     const section = document.getElementById('waste-chart-section');
+    if (!section) return;
+    if (getSettings().waste_report_enabled === false) { section.style.display = 'none'; return; }
     const total30 = used30 + wasted30;
     if (total30 === 0) { section.style.display = 'none'; return; }
     // Show only if the alternation phase allows it (or before alternation starts)
@@ -6034,8 +6090,9 @@ function _applyInsightPhase() {
     if (!wasteEl || !nutrEl) return;
 
     // Map of which panels actually have rendered content
+    const wasteOn = getSettings().waste_report_enabled !== false;
     const hasContent = {
-        'waste':     wasteEl.innerHTML.trim()    !== '',
+        'waste':     wasteOn && wasteEl.innerHTML.trim()    !== '',
         'nutrition': nutrEl.innerHTML.trim()     !== '',
         'monthly':   !!monthlyEl && monthlyEl.innerHTML.trim() !== '',
         'macros':    !!macrosEl  && macrosEl.innerHTML.trim()  !== '',
@@ -6049,7 +6106,7 @@ function _applyInsightPhase() {
         phase = _INSIGHT_PHASES[(_INSIGHT_PHASES.indexOf(phase) + 1) % _INSIGHT_PHASES.length];
     }
 
-    const showWaste   = phase === 'waste';
+    const showWaste   = phase === 'waste' && wasteOn;
     const showNutr    = phase === 'nutrition';
     const showMonthly = phase === 'monthly';
     const showMacros  = phase === 'macros';
@@ -12815,9 +12872,10 @@ function showLowStockBringPrompt(result, afterCallback) {
     
     // ── Fully depleted: backend already added to EverShelf shopping list ──
     if (totalRemaining <= 0) {
-        const addedToList = !!(result.added_to_shopping || result.added_to_bring);
+        const shoppingOn = getSettings().shopping_enabled !== false;
+        const addedToList = shoppingOn && !!(result.added_to_shopping || result.added_to_bring);
         // Fallback if server skipped (e.g. race) — still targets EverShelf list via shopping_add
-        if (!addedToList && shoppingName) {
+        if (shoppingOn && !addedToList && shoppingName) {
             const spec = (shoppingName !== name ? name + (result.product_brand ? ` · ${result.product_brand}` : '') : name) + ' · 🛒 Esaurito';
             (async () => {
                 try {
