@@ -1,5 +1,5 @@
 /* EverShelf PWA service worker — caches app shell for offline read */
-const CACHE = 'evershelf-v13';
+const CACHE = 'evershelf-v14';
 const BASE = (() => {
     const p = self.location.pathname || '/';
     return p.endsWith('sw.js') ? p.slice(0, -'sw.js'.length) : '/';
@@ -35,16 +35,14 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     if (url.pathname.includes('/api/')) return;
     if (event.request.method !== 'GET') return;
+    // Network-first for the app shell so updates appear immediately; fall back to cache offline.
     event.respondWith(
-        caches.match(event.request).then((cached) =>
-            cached ||
-            fetch(event.request).then((res) => {
-                if (res.ok && url.origin === self.location.origin) {
-                    const clone = res.clone();
-                    caches.open(CACHE).then((c) => c.put(event.request, clone));
-                }
-                return res;
-            }).catch(() => cached)
-        )
+        fetch(event.request).then((res) => {
+            if (res.ok && url.origin === self.location.origin) {
+                const clone = res.clone();
+                caches.open(CACHE).then((c) => c.put(event.request, clone));
+            }
+            return res;
+        }).catch(() => caches.match(event.request))
     );
 });
