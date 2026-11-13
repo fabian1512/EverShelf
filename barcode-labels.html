@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EverShelf — EigenBarcode-Labels</title>
+<style>
+:root { --ink:#1c2b22; --muted:#6b7a72; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "Segoe UI", sans-serif; color:var(--ink); margin:0; background:#f2f4f1; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 1.25rem; margin: 12px 0 4px; }
+p.hint { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+ol.hint { color: var(--muted); font-size: 0.85rem; padding-left: 20px; }
+.card { background:#fff; border:1px solid #dde3df; border-radius:12px; padding:16px; margin:14px 0; }
+.formgrid { display:flex; gap:10px; flex-wrap:wrap; }
+.formgrid input { flex:1; min-width:180px; padding:10px 12px; border:1px solid #ccd4cf; border-radius:8px; font-size:1rem; }
+button { border:0; border-radius:8px; padding:10px 16px; font-size:0.95rem; cursor:pointer; background:#2e7d32; color:#fff; }
+button.sec { background:#eef2ef; color:var(--ink); border:1px solid #ccd4cf; }
+.btnrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.lbl-list { list-style:none; margin:8px 0 0; padding:0; }
+.lbl-list li { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #eef1ee; font-size:0.95rem; }
+.lbl-list code { background:#eef3ef; padding:2px 8px; border-radius:6px; font-size:0.85rem; white-space:nowrap; }
+.lbl-list .grow { flex:1; }
+@media print {
+  body { background:#fff; }
+  .no-print { display:none !important; }
+  #print-area { display:block !important; }
+}
+#print-area { display:none; }
+.sheet { display:grid; grid-template-columns: repeat(3, 1fr); gap:8mm 6mm; }
+.label { border:1px dashed #aaa; border-radius:6px; padding:4mm 4mm 2mm; text-align:center; page-break-inside:avoid; }
+.label .name { font-size: 10pt; font-weight:600; margin-bottom:2mm; line-height:1.15; }
+.label .sub { font-size:8pt; color:#111; margin-top:1.5mm; font-family: monospace; letter-spacing:1px; }
+.label .note { font-size:7pt; color:#666; margin-bottom:2mm; }
+.label svg { width:95%; height:auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏷️ EigenBarcode-Label-Druck</h1>
+  <p class="hint">Eigene EAN-13-Codes für selbstgekochtes. Der Bereich <code>200…</code> ist laut GS1 für
+     Eigenmarken/In-Store reserviert — kollidiert nie mit echten Produkten und wird von der iPhone-Kamera
+     wie ein normaler EAN gelesen.</p>
+  <ol class="hint">
+    <li>Label drucken, ausschneiden, auf den Behälter kleben.</li>
+    <li>Den Artikel in EverShelf <b>einmal</b> mit diesem Code anlegen: Scanner → Barcode-Tab → Code eintippen
+        → „neues Produkt“ → im Produkt-Formular den Barcode eintragen.</li>
+    <li>Ab dann: Behälter scannen → Artikel kommt aus der lokalen DB → „📥 AGGIUNGI“.</li>
+  </ol>
+
+  <div class="card no-print">
+    <div class="formgrid">
+      <input type="text" id="name" placeholder="Produktname, z. B. Chili con Carne" autocomplete="off">
+      <input type="text" id="note" placeholder="Notiz (optional), z. B. 4 Portionen" autocomplete="off">
+    </div>
+    <div class="btnrow">
+      <button onclick="addLabel()">➕ Label erzeugen</button>
+      <button class="sec" onclick="window.print()">🖨️ Alle drucken</button>
+      <button class="sec" onclick="exportCsv()">⬇️ CSV-Export</button>
+      <button class="sec" onclick="wipeList()">🗑️ Liste leeren</button>
+    </div>
+    <p style="margin-top:8px;font-size:0.9rem" id="counter"></p>
+    <ul class="lbl-list" id="list"></ul>
+  </div>
+
+  <div id="print-area"><div class="sheet" id="sheet"></div></div>
+</div>
+
+<script>
+'use strict';
+const LS_KEY = 'evershelf_own_ean_v2';
+let labels = [];
+try { labels = JSON.parse(localStorage.getItem(LS_KEY) || '[]') || []; } catch (e) { labels = []; }
+if (!Array.isArray(labels)) labels = [];
+
+/* ── EAN-13 (pure SVG, ohne externe Libs) ──
+   Aufbau: Start-Guard 101 · 6 linke Ziffern (Parität aus 1. Ziffer)
+   · Mittel-Guard 01010 · 6 rechte Ziffern · End-Guard 101                */
+const L_CODE = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+const G_CODE = ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
+const PARITY = ['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGLGL','LGLGLG','LGLGGL','LGGGLL'];
+const R_CODE = L_CODE.map(b => b.split('').map(c => c === '1' ? '0' : '1').join(''));
+
+function checkDigit(d12) {
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += (+d12[i]) * (i % 2 ? 3 : 1);
+  return (10 - (sum % 10)) % 10;
+}
+function ean13Valid(code) {
+  return /^\d{13}$/.test(code) && +code[12] === checkDigit(code.slice(0, 12));
+}
+function encodeLeft(d1, left6) {
+  const pattern = PARITY[+d1] || 'LLLLLL';
+  let bits = '';
+  for (let i = 0; i < 6; i++) {
+    bits += pattern[i] === 'G' ? G_CODE[+left6[i]] : L_CODE[+left6[i]];
+  }
+  return bits;
+}
+function ean13Bits(code) {
+  return '101' + encodeLeft(code[0], code.slice(1, 7)) + '01010'
+       + code.slice(7, 13).split('').map(d => R_CODE[+d]).join('') + '101';
+}
+function svgEan13(code) {
+  if (!ean13Valid(code)) return '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20"><text>Ungültig</text></svg>';
+  const bits = ean13Bits(code);
+  const barW = 2.2, barH = 56, quiet = 9;
+  const w = (bits.length + quiet * 2) * barW;
+  const h = barH + 16;
+  let rects = '';
+  let x = quiet * barW, on = false, runLen = 0, runX = 0;
+  for (let i = 0; i < bits.length; i++) {
+    if (bits[i] === '1') {
+      if (!on) { runX = x; on = true; }
+      runLen++; x += barW;
+    } else {
+      if (on) { rects += `<rect x="${runX}" y="0" width="${runLen * barW}" height="${barH}"/>`; on = false; runLen = 0; }
+      x += barW;
+    }
+  }
+  if (on) rects += `<rect x="${runX}" y="0" width="${runLen * barW}" height="${barH}"/>`;
+  const txt = `<text x="${w / 2}" y="${barH + 13}" text-anchor="middle" font-family="monospace" font-size="10">${code}</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><rect width="${w}" height="${h}" fill="#fff"/>${rects}${txt}</svg>`;
+}
+
+/* ── Label-Verwaltung ── */
+function nextCode() {
+  let maxUsed = 0;
+  labels.forEach(l => { const n = parseInt(l.barcode.slice(3), 10) || 0; if (n > maxUsed) maxUsed = n; });
+  const base = '200' + String(maxUsed + 1).padStart(9, '0');
+  return base + checkDigit(base);
+}
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(labels)); } catch (e) {} }
+function addLabel() {
+  const name = document.getElementById('name').value.trim();
+  if (!name) { document.getElementById('name').focus(); return; }
+  labels.push({ name, note: document.getElementById('note').value.trim(), barcode: nextCode() });
+  save();
+  document.getElementById('name').value = '';
+  document.getElementById('note').value = '';
+  render();
+}
+function delLabel(i) { labels.splice(i, 1); save(); render(); }
+function wipeList() {
+  if (!labels.length) return;
+  if (!confirm('Alle Labels aus der Liste entfernen? (Bereits gedruckte Codes bleiben gültig — bitte Liste vorher über den CSV-Export sichern.)')) return;
+  labels = []; save(); render();
+}
+function exportCsv() {
+  if (!labels.length) return;
+  const csv = ['name;note;barcode'].concat(
+    labels.map(l => `${l.name};${(l.note || '').replace(/;/g, ',')};${l.barcode}`)
+  ).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'evershelf-eigenbarcodes.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function esc(s) { return String(s || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+function render() {
+  const ul = document.getElementById('list');
+  const sheet = document.getElementById('sheet');
+  ul.innerHTML = labels.map((l, i) =>
+    `<li><span class="grow">${esc(l.name)}${l.note ? ' <small style="color:var(--muted)">· ' + esc(l.note) + '</small>' : ''}</span>
+      <code>${l.barcode}</code>
+      <button class="sec" onclick="delLabel(${i})">✕</button></li>`).join('');
+  sheet.innerHTML = labels.map(l =>
+    `<div class="label">
+       <div class="name">${esc(l.name)}</div>
+       ${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}
+       ${svgEan13(l.barcode)}
+       <div class="sub">${l.barcode}</div>
+     </div>`).join('');
+  document.getElementById('counter').textContent =
+    labels.length + ' Label(s) in der Liste · nächster Code: ' + nextCode();
+}
+render();
+</script>
+</body>
+</html>

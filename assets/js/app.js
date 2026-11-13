@@ -2969,6 +2969,12 @@ function _deletedLocationKeys() {
 }
 
 function mergeCustomLocations(names) {
+    // Freezer-only mode (.env FREEZER_ONLY): the pantry has exactly one place.
+    if (getSettings().freezer_only) {
+        LOCATIONS = { freezer: { icon: BUILTIN_LOCATIONS.freezer.icon, label: t(BUILTIN_LOCATIONS.freezer.labelKey) } };
+        rebuildLocationPickers();
+        return;
+    }
     const medical = [];
     const rest = [];
     // A place the household deleted does not come back: the slug list is the promise the
@@ -4528,6 +4534,7 @@ function guessLocationFromName(name) {
 }
 
 function guessLocation(product) {
+    if (getSettings().freezer_only) return 'freezer';
     // 1. Category-based
     if (product.category) {
         const cat = product.category.toLowerCase().replace(/^en:/, '').split(',')[0].trim();
@@ -6160,6 +6167,8 @@ function _applySyncedSettings(serverSettings) {
         'product_kind_prefix','auto_favorite_min_uses','tags_enabled','audit_mode_batch_size','product_variants_enabled','receipt_ocr_enabled',
         // What this instance keeps: the three numbers of Settings → Sistema → Dati.
         'recipe_retention_days','transaction_retention_days','vacuum_expiry_extension_days',
+        'recipes_enabled','freezer_only','waste_report_enabled',
+        'use_all_ack_required',
         'dark_mode',
         'barcode_ai_fallback',
         'recipe_source','mealie_url','mealie_offline','mealie_cache_sync_days','mealie_usable','recipe_shopping_mode',
@@ -6191,6 +6200,49 @@ function _applySyncedSettings(serverSettings) {
         mergeCustomLocations(s.custom_locations || []);
         // Update localStorage hint for _earlyTheme() IIFE on next load
         try { localStorage.setItem('evershelf_dark_mode', s.dark_mode || 'auto'); } catch(_) {}
+    }
+    _applyModuleVisibility();
+}
+
+/** Toggle whole modules (nav tabs, dashboard cards, settings tabs) from .env flags. */
+function _applyModuleVisibility() {
+    const s = getSettings();
+    const shoppingOn = s.shopping_enabled !== false;
+    const recipesOn = s.recipes_enabled !== false;
+    const wasteOn = s.waste_report_enabled !== false;
+    const freezerOnly = !!s.freezer_only;
+
+    // Shopping
+    const navShop = document.getElementById('nav-shopping');
+    if (navShop) navShop.style.display = shoppingOn ? '' : 'none';
+    const shopCard = document.getElementById('stat-card-spesa');
+    if (shopCard) shopCard.style.display = shoppingOn ? '' : 'none';
+    const shopTab = document.querySelector('.settings-tab[data-tab="tab-bring"]');
+    if (shopTab) shopTab.style.display = shoppingOn ? '' : 'none';
+
+    // Recipes
+    const navRecipe = document.getElementById('nav-recipe');
+    if (navRecipe) navRecipe.style.display = recipesOn ? '' : 'none';
+    const quickRecipe = document.getElementById('quick-recipe-bar');
+    if (quickRecipe) quickRecipe.style.display = recipesOn ? '' : 'none';
+    const recipeTab = document.querySelector('.settings-tab[data-tab="tab-recipe"]');
+    if (recipeTab) recipeTab.style.display = recipesOn ? '' : 'none';
+
+    // Anti-waste report
+    const wasteEl = document.getElementById('waste-chart-section');
+    if (wasteEl) {
+        if (!wasteOn) { wasteEl.style.display = 'none'; wasteEl.dataset.hiddenByFlag = '1'; }
+        else { wasteEl.style.display = ''; delete wasteEl.dataset.hiddenByFlag; }
+    }
+
+    // Freezer-only: hide other location cards
+    if (freezerOnly) {
+        const dispensaCard = document.getElementById('stat-card-dispensa');
+        if (dispensaCard) dispensaCard.style.display = 'none';
+        const frigoCard = document.getElementById('stat-card-frigo');
+        if (frigoCard) frigoCard.style.display = 'none';
+        const customLocCard = document.getElementById('custom-locations-card');
+        if (customLocCard) customLocCard.style.display = 'none';
     }
 }
 
@@ -9766,6 +9818,12 @@ function refreshAppDataAfterMutation() {
 }
 
 function showPage(pageId, param = null, options = {}) {
+    // Block disabled modules (controlled by .env flags)
+    if (pageId === 'shopping' && getSettings().shopping_enabled === false) {
+        pageId = 'dashboard';
+    } else if (pageId === 'recipe' && getSettings().recipes_enabled === false) {
+        pageId = 'dashboard';
+    }
     // A device that cannot use its camera still shows the 📷 with its ✕ («meglio mettere una X
     // sulla fotocamera quando non è disponibile, e se la clicchi viene fuori il messaggio») — and
     // the tap now OPENS THE PAGE. Only the stream is unavailable, and half of this page never
@@ -10058,6 +10116,8 @@ function _awTrendArrow(prev, curr) {
 
 function _renderAntiWasteSection(used30, wasted30, usedP30, wastedP30, usedP60, wastedP60, isOnline = navigator.onLine) {
     const section = document.getElementById('waste-chart-section');
+    if (!section) return;
+    if (getSettings().waste_report_enabled === false) { section.style.display = 'none'; return; }
     const total30 = used30 + wasted30;
     if (total30 === 0) { section.style.display = 'none'; return; }
     // Show only if the alternation phase allows it (or before alternation starts)
@@ -10783,9 +10843,10 @@ function _applyInsightPhase() {
     if (!wasteEl || !nutrEl) return;
 
     // Map of which panels actually have rendered content
+    const wasteOn = getSettings().waste_report_enabled !== false;
     const hasContent = {
         'overview':  !!overviewEl  && overviewEl.innerHTML.trim()  !== '',
-        'waste':     wasteEl.innerHTML.trim()    !== '',
+        'waste':     wasteOn && wasteEl.innerHTML.trim()    !== '',
         'trend':     !!trendEl     && trendEl.innerHTML.trim()     !== '',
         'nutrition': nutrEl.innerHTML.trim()     !== '',
         'freshness': !!freshnessEl && freshnessEl.innerHTML.trim() !== '',
@@ -10806,7 +10867,7 @@ function _applyInsightPhase() {
         ...(overviewEl ? [overviewEl] : []), ...(freshnessEl ? [freshnessEl] : []), ...(trendEl ? [trendEl] : [])];
     els.forEach(el => { el.style.opacity = '0'; el.style.transition = 'opacity .6s'; });
     setTimeout(() => {
-        wasteEl.style.display   = phase === 'waste'   ? 'block' : 'none';
+        wasteEl.style.display   = (phase === 'waste' && wasteOn) ? 'block' : 'none';
         nutrEl.style.display    = phase === 'nutrition' ? 'block' : 'none';
         if (monthlyEl)   monthlyEl.style.display   = phase === 'monthly'   ? 'block' : 'none';
         if (macrosEl)    macrosEl.style.display    = phase === 'macros'    ? 'block' : 'none';
@@ -29337,9 +29398,10 @@ function showLowStockBringPrompt(result, afterCallback) {
     
     // ── Fully depleted: backend already added to EverShelf shopping list ──
     if (totalRemaining <= 0) {
-        const addedToList = !!(result.added_to_shopping || result.added_to_bring);
+        const shoppingOn = getSettings().shopping_enabled !== false;
+        const addedToList = shoppingOn && !!(result.added_to_shopping || result.added_to_bring);
         // Fallback if server skipped (e.g. race) — still targets EverShelf list via shopping_add
-        if (!addedToList && shoppingName) {
+        if (shoppingOn && !addedToList && shoppingName) {
             const spec = (shoppingName !== name ? name + (result.product_brand ? ` · ${result.product_brand}` : '') : name) + ' · 🛒 Esaurito';
             (async () => {
                 try {
@@ -30136,6 +30198,9 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
     const warn = opts.warn || t('use.use_all_safety_warn');
     const ackLabel = opts.ack || t('use.use_all_safety_ack');
     const slideLabel = opts.slide || t('use.use_all_slide_label');
+    // .env flag USE_ALL_ACK_REQUIRED — when false, skip the acknowledge checkbox
+    // and enable the slide gesture immediately (slide itself stays as the guard).
+    const ackRequired = getSettings().use_all_ack_required !== false;
 
     contentEl.innerHTML = `
         <div class="use-all-safety">
@@ -30144,11 +30209,12 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
             <p class="use-all-safety-product">${escapeHtml(productName)}</p>
             <p class="use-all-safety-qty">${escapeHtml(qtyStr)}</p>
             <p class="use-all-safety-warn">${escapeHtml(warn)}</p>
+            ${ackRequired ? `
             <label class="use-all-safety-check">
                 <input type="checkbox" id="use-all-ack">
                 <span>${escapeHtml(ackLabel)}</span>
-            </label>
-            <div class="slide-confirm is-disabled" id="use-all-slide" aria-disabled="true">
+            </label>` : ''}
+            <div class="slide-confirm${ackRequired ? ' is-disabled' : ''}" id="use-all-slide" aria-disabled="${ackRequired}">
                 <div class="slide-confirm-track">
                     <span class="slide-confirm-label">${escapeHtml(slideLabel)}</span>
                     <div class="slide-confirm-fill" id="use-all-slide-fill"></div>
@@ -30175,7 +30241,7 @@ function _showUseAllSlideConfirm(productName, qtyStr, onConfirm, opts = {}) {
             thumb.setAttribute('aria-valuenow', '0');
         }
     }
-    ack.addEventListener('change', () => setEnabled(ack.checked));
+    if (ack) ack.addEventListener('change', () => setEnabled(ack.checked));
 
     let dragging = false;
     let maxX = 0;

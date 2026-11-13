@@ -3368,7 +3368,7 @@
     <!-- Recipes own this slot again: it is the second thing a household does with a pantry,
          and hiding it behind the dashboard CTA made it feel gone. The scanner is still one
          tap away (dashboard and product flows call showPage('scan')) without taking a slot. -->
-    <button class="nav-btn" onclick="showPage('recipe')" data-page="recipe" aria-label="Ricette" data-i18n-aria="nav.recipes">
+    <button class="nav-btn" id="nav-recipe" onclick="showPage('recipe')" data-page="recipe" aria-label="Ricette" data-i18n-aria="nav.recipes">
         <span class="nav-icon" aria-hidden="true">🍳</span>
         <span class="nav-label" data-i18n="nav.recipes">Ricette</span>
     </button>
@@ -3381,7 +3381,7 @@
             <img class="nav-capture-avatar" src="assets/img/shelfy/shelfy-avatar-96.png" alt="" decoding="async">
         </span>
     </button>
-    <button class="nav-btn" onclick="showPage('shopping')" data-page="shopping" aria-label="Spesa" data-i18n-aria="nav.shopping">
+    <button class="nav-btn" id="nav-shopping" onclick="showPage('shopping')" data-page="shopping" aria-label="Spesa" data-i18n-aria="nav.shopping">
         <span class="nav-icon" aria-hidden="true">🛒</span>
         <span class="nav-label" data-i18n="nav.shopping">Spesa</span>
     </button>

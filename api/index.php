@@ -2018,6 +2018,10 @@ function inventoryImportParseCsv(string $csv): array {
 }
 
 function inventoryImportNormalizeLocation(string $raw): ?string {
+    // Freezer-only mode: everything goes to the freezer.
+    if (env('FREEZER_ONLY', 'false') === 'true') {
+        return 'freezer';
+    }
     $v = mb_strtolower(trim($raw));
     if ($v === '') {
         return 'dispensa';
@@ -2049,6 +2053,9 @@ function inventoryImportNormalizeLocation(string $raw): ?string {
 
 /** Built-in inventory location keys. */
 function inventoryBuiltinLocations(): array {
+    if (env('FREEZER_ONLY', 'false') === 'true') {
+        return ['freezer'];
+    }
     return ['dispensa', 'frigo', 'freezer', 'altro'];
 }
 
@@ -2217,6 +2224,14 @@ function saveDeletedLocations(PDO $db, array $list): void
     $db->prepare("INSERT INTO app_settings (key, value, updated_at) VALUES ('deleted_locations', ?, datetime('now'))
                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
        ->execute([json_encode($clean, JSON_UNESCAPED_UNICODE)]);
+}
+
+/** In freezer-only mode, force every location to 'freezer'. */
+function inventoryNormalizeLocation(string $loc): string {
+    if (env('FREEZER_ONLY', 'false') === 'true') {
+        return 'freezer';
+    }
+    return $loc;
 }
 
 /** Display names only (for settings UI / .env). */
@@ -5723,6 +5738,7 @@ function addToInventory(PDO $db): void {
     }
 
     // Validate location
+    $location = inventoryNormalizeLocation((string)($location ?? ''));
     $validLocations = validInventoryLocations($db);
     // A client that names no place at all (an older bundle, a legacy form) gets a place that
     // exists instead of a refusal it could not explain.
@@ -10175,6 +10191,11 @@ function getServerSettings(?PDO $db = null): void {
         'audit_mode_batch_size'       => (int)env('AUDIT_MODE_BATCH_SIZE', '5'),
         'auto_favorite_min_uses'      => (int)env('AUTO_FAVORITE_MIN_USES', '3'),
         'auto_favorite_top_n'         => (int)env('AUTO_FAVORITE_TOP_N', '3'),
+        // Module toggles (minimal mode)
+        'recipes_enabled'             => env('RECIPES_ENABLED', 'true') === 'true',
+        'freezer_only'                => env('FREEZER_ONLY', 'false') === 'true',
+        'waste_report_enabled'        => env('WASTE_REPORT_ENABLED', 'true') === 'true',
+        'use_all_ack_required'        => env('USE_ALL_ACK_REQUIRED', 'true') === 'true',
         'dark_mode'                   => env('DARK_MODE', 'auto'),
         'barcode_ai_fallback'         => env('BARCODE_AI_FALLBACK', 'false') === 'true',
         // Telegram bot (optional household client — /lista, /scadenze)
@@ -11413,6 +11434,11 @@ function saveSettings(): void {
         'shopping_enabled'           => 'SHOPPING_ENABLED',
         'shopping_smart_suggestions' => 'SHOPPING_SMART_SUGGESTIONS',
         'shopping_forecast'          => 'SHOPPING_FORECAST',
+        // Module toggles (minimal mode)
+        'recipes_enabled'      => 'RECIPES_ENABLED',
+        'freezer_only'         => 'FREEZER_ONLY',
+        'waste_report_enabled' => 'WASTE_REPORT_ENABLED',
+        'use_all_ack_required' => 'USE_ALL_ACK_REQUIRED',
         'barcode_ai_fallback' => 'BARCODE_AI_FALLBACK',
         // Home Assistant
         'ha_enabled'    => 'HA_ENABLED',
@@ -22207,6 +22233,10 @@ function shoppingAddInternal(PDO $db, array $input): void {
  * @return array{added:int,updated:int,skipped:int,errors:array}
  */
 function shoppingAddItemsCore(PDO $db, array $items): array {
+    // Shopping module disabled via .env — no-op all list writes.
+    if (env('SHOPPING_ENABLED', 'true') !== 'true') {
+        return ['added' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => []];
+    }
     $added = 0; $updated = 0; $skipped = 0;
     foreach ($items as $item) {
         $name    = trim($item['name'] ?? '');
@@ -22586,10 +22616,10 @@ function familySiblingSuggest(PDO $db): void {
         return;
     }
 
-    $validLocations = ['dispensa', 'frigo', 'freezer', 'altro'];
-    $location = $input['location'] ?? 'dispensa';
+    $validLocations = validInventoryLocations();
+    $location = inventoryNormalizeLocation((string)($input['location'] ?? 'dispensa'));
     if (!in_array($location, $validLocations, true)) {
-        $location = 'dispensa';
+        $location = in_array('dispensa', $validLocations, true) ? 'dispensa' : 'freezer';
     }
 
     $stmt = $db->prepare("SELECT name, shopping_name, unit, default_quantity, package_unit FROM products WHERE id = ?");
@@ -23755,17 +23785,19 @@ function geminiProductHint(): void {
     $text = preg_replace('/\s*```$/i', '', $text);
     $parsed = json_decode(trim($text), true);
 
-    $allowedLocations = ['dispensa', 'frigo', 'freezer'];
+    $allowedLocations = validInventoryLocations();
+    $parsedLoc = isset($parsed['location']) ? inventoryNormalizeLocation((string)$parsed['location']) : '';
     if (
         !is_array($parsed)
-        || empty($parsed['location'])
-        || !in_array($parsed['location'], $allowedLocations, true)
+        || empty($parsedLoc)
+        || !in_array($parsedLoc, $allowedLocations, true)
         || empty($parsed['expiry_days'])
         || !is_numeric($parsed['expiry_days'])
     ) {
         echo json_encode(['success' => false, 'error' => 'parse_error', 'raw' => $text]);
         return;
     }
+    $parsed['location'] = $parsedLoc;
 
     $data = [
         'location'    => $parsed['location'],
