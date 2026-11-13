@@ -205,6 +205,19 @@ function aiOpenAiChatCompletions(array $geminiPayload, int $timeout = 60): array
     if (!empty($gen['maxOutputTokens'])) {
         $body['max_tokens'] = (int)$gen['maxOutputTokens'];
     }
+    // A caller that asked for "no thinking" (Gemini's thinkingBudget 0) must get the same
+    // answer from an OpenAI-compatible endpoint. Without it a reasoning model spends the
+    // whole max_tokens on reasoning_content and returns an empty answer: measured on
+    // DeepSeek V4.1 Flash, finish_reason "length", content "" and 15 of 16 tokens of
+    // thinking — the connection test then reported a working gateway as "failed".
+    // OPENAI_REASONING_EFFORT (none/low/medium/high) overrides the per-call default.
+    $effort = trim((string)env('OPENAI_REASONING_EFFORT', ''));
+    if ($effort === '' && (int)($gen['thinkingConfig']['thinkingBudget'] ?? -1) === 0) {
+        $effort = 'none';
+    }
+    if ($effort !== '') {
+        $body['reasoning_effort'] = $effort;
+    }
 
     $url = $base . '/chat/completions';
     $headers = ['Content-Type: application/json'];
@@ -257,6 +270,15 @@ function aiOpenAiChatCompletions(array $geminiPayload, int $timeout = 60): array
                 } elseif (is_array($p) && isset($p['text'])) {
                     $text .= (string)$p['text'];
                 }
+            }
+        }
+        // Safety net for a reasoning model that put everything in reasoning_content and
+        // left content empty (a truncated or mis-tuned thinking budget). Better a usable
+        // sentence than an empty answer the caller reads as "the AI said nothing".
+        if (trim($text) === '') {
+            $reasoning = $data['choices'][0]['message']['reasoning_content'] ?? '';
+            if (is_string($reasoning) && trim($reasoning) !== '') {
+                $text = $reasoning;
             }
         }
     }
@@ -316,7 +338,11 @@ function aiRunConnectionTest(int $timeout = 25): array {
         ]],
         'generationConfig' => [
             'temperature' => 0,
-            'maxOutputTokens' => 16,
+            // Room for a reasoning model: with 16 tokens a thinking model spends them all
+            // on reasoning_content and answers with an empty content, which the panel
+            // showed as a failed connection on a gateway that was working.
+            'maxOutputTokens' => 256,
+            'thinkingConfig' => ['thinkingBudget' => 0],
         ],
     ];
 
